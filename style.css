@@ -77,6 +77,7 @@ body {
 #scene .d { color: var(--c-dock); }
 #scene .l { color: var(--c-line); }
 #scene .b { color: var(--c-bob); }
+#scene .v { color: var(--accent-2); }
 #scene .e { color: var(--c-ember); text-shadow: 0 0 6px var(--c-ember-glow), 0 0 12px var(--c-ember-glow); }
 
 /* ---------- terminal window ---------- */

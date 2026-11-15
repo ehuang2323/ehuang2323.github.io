@@ -268,6 +268,23 @@
       return `comets ~ PoissonProcess(μ = ${fmt(Scene.mu, 3)}/s) <span class="muted">· mean gap ${Scene.mu ? fmt(1 / Scene.mu, 1) + 's' : '∞'}</span>`;
     } },
     comet: { desc: 'summon one comet now', run: () => { Scene.comet(); return '<span class="muted">☄  look up.</span>'; } },
+    bites: { usage: 'bites [ν|off] [p]', desc: 'bites/sec — Poisson process; each is a fish w.p. p, else a boot', run([v, p]) {
+      if (v === 'off') Scene.setNu(0);
+      else if (v !== undefined) { if (!(+v >= 0)) return err('usage: bites [ν|off] [p]'); Scene.setNu(+v); }
+      if (p !== undefined) { if (!(+p >= 0 && +p <= 1)) return err('p must be between 0 and 1'); Scene.setPFish(+p); }
+      const nu = Scene.nu, q = Scene.pFish;
+      return `bites ~ PP(ν = ${fmt(nu, 3)}/s) <span class="muted">· mean gap ${nu ? fmt(1 / nu, 0) + 's' : '∞'}</span>
+        <div class="muted">thinned: fish ~ PP(νp = ${fmt(nu * q, 3)}), boots ~ PP(ν(1−p) = ${fmt(nu * (1 - q), 3)}) with p = ${fmt(q)}</div>`;
+    } },
+    bite: { desc: 'make something bite right now', run: () => (Scene.bite() ? '<span class="muted">the bobber dips…</span>' : '<span class="muted">the line is busy.</span>') },
+    moon: { desc: 'the real moon over Durham, NC right now', run: () => {
+      const m = Scene.moon();
+      const at = (d) => d ? d.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
+      const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(m.azimuth / 45) % 8];
+      return `<div class="pre"><span class="h2">${esc(m.name)}</span> · ${fmt(m.illumination * 100, 0)}% lit <span class="muted">(phase ${fmt(m.phase, 3)})</span>
+${m.up ? `up over ${esc(m.place)}: ${fmt(m.altitude, 1)}° high, toward ${compass} (${fmt(m.azimuth, 0)}°) <span class="muted">· sets ${esc(at(m.sets))}</span>`
+       : `below the horizon in ${esc(m.place)} <span class="muted">· rises ${esc(at(m.rises))}</span>`}</div>`;
+    } },
     stats: { desc: 'check the simulation against theory', run: () => {
       const s = Scene.stats();
       return `<div class="pre"><span class="h2">rain</span>   model: N(1s) ~ Poisson(λ=${s.lambda})
@@ -275,6 +292,8 @@
          total drops ${s.rainTotal} · on screen ${s.onScreen.drops}
 <span class="h2">comets</span> model: gaps ~ Exp(μ=${fmt(s.mu, 3)}) → E[gap] = ${s.mu ? fmt(1 / s.mu, 1) : '∞'}s
          observed: ${s.comets} arrivals · mean gap ${fmt(s.gapMean, 1)}s · next in ${fmt(s.nextIn, 1)}s <span class="muted">(shh)</span>
+<span class="h2">bites</span>  model: PP(ν=${fmt(s.nu, 3)}), fish w.p. p=${fmt(s.pFish)}
+         observed: ${s.fish} fish · ${s.boots} boots · fish share ${fmt(s.fish / (s.fish + s.boots))} <span class="muted">(≈p)</span> · ${s.missed} missed while busy · next in ${fmt(s.nextBiteIn, 1)}s
 <span class="muted">sim time ${fmt(s.simT, 0)}s${Scene.paused ? ' · paused / reduced motion' : ''}</span></div>`;
     } },
     pause: { desc: 'freeze the scene', run: () => { Scene.pause(); return 'scene paused. <span class="muted">resume with</span> ' + cmd('play'); } },
@@ -484,7 +503,7 @@
   // live HUD
   setInterval(() => {
     if (!window.Scene) return;
-    hud.textContent = `rain ~ Poisson(λ=${Scene.rate}/s) · comets ~ PP(μ=${fmt(Scene.mu, 3)}/s)`;
+    hud.textContent = `rain ~ Poisson(λ=${Scene.rate}/s) · comets ~ PP(μ=${fmt(Scene.mu, 3)}/s) · bites ~ PP(ν=${fmt(Scene.nu, 3)}/s)`;
   }, 500);
 
   // ------------------------------------------------------------------ boot

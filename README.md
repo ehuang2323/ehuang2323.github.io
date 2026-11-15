@@ -1,6 +1,6 @@
 # personal site
 
-A terminal-style personal website, with an ASCII farmer fishing by a lake in the background. The rain and comets are Poisson processes. It's static HTML/CSS/JS with no build step, so GitHub Pages serves it as is.
+A terminal-style personal website, with an ASCII farmer dozing over his fishing rod by a lake in the background. The rain, comets and fish bites are Poisson processes, and the moon is the real one over Durham, NC, with its current phase and its current place in the sky. It's static HTML/CSS/JS with no build step, so GitHub Pages serves it as is.
 
 ## Edit content (no code needed)
 
@@ -48,8 +48,10 @@ The scene has its own commands:
 - `rain [λ|auto|off]` sets drops per second. New drops per frame are drawn as Poisson(λ·dt).
 - `comets [μ|off]` sets the comet rate. Comets form a Poisson process with gaps drawn from Exp(μ).
 - `comet` summons one now.
+- `bites [ν|off] [p]` sets the bite rate and the chance a bite is a fish rather than a boot. Bites form a Poisson process; thinning by p makes fish ~ PP(νp) and boots ~ PP(ν(1−p)). `bite` makes something bite now.
+- `moon` shows the real moon over Durham: phase, % lit, altitude and direction, and when it next rises or sets. When it's below the horizon, the scene shows no moon.
 - `wind <x>` blows the rain sideways.
-- `stats` compares the observed counts with theory (var/mean ≈ 1 for Poisson, mean gap ≈ 1/μ).
+- `stats` compares the observed counts with theory (var/mean ≈ 1 for Poisson, mean gap ≈ 1/μ, fish share ≈ p).
 - `pause` / `play` freeze and restart the scene.
 
 Section links work as URL hashes, e.g. `/#projects`. The scene shows a still frame for visitors who have "reduce motion" turned on.
@@ -71,7 +73,7 @@ Sections listed in `content/site.json` under `"under_construction"` (now `projec
 
 ## Blog + private journal
 
-A star lies glowing on the dock to the right of the farmer. It brightens as your cursor nears; drag it anywhere and it stays there (remembered across visits). Drop it into the farmer's hands: it climbs the rod and blooms, and a window slides in on the right. Close it (red dot) and the star arcs back to wherever it was resting. The window can be dragged by its title bar, resized from any edge or corner, maximized with green or a title-bar double-click, and minimized to a tab with yellow. Drag it against the right screen edge to dock it again.
+A star hangs just under the moon, or high on the right when the moon is down. It brightens as your cursor nears; drag it anywhere and it stays there (remembered across visits). The farmer is asleep, so **click him first**: he wakes, notices the star, and stays up for about 20 seconds. Bring him the star while he's awake: it climbs the rod and blooms, and a window slides in on the right. Drop it on him while he's asleep and he just snores. Close it (red dot) and the star arcs back to wherever it was resting. The window can be dragged by its title bar, resized from any edge or corner, maximized with green or a title-bar double-click, and minimized to a tab with yellow. Drag it against the right screen edge to dock it again.
 
 **Visitors** get the *blog*: they can read, search, sort and filter posts by tag, but can't write. Posts come from `content/blog.json` in this repo.
 

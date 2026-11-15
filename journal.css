@@ -1,3 +1,10 @@
+/* ---------- click target over the farmer ---------- */
+#farmer {
+  position: fixed; z-index: 1;
+  padding: 0; border: 0; background: none; cursor: pointer;
+}
+#farmer:focus { outline: none; }
+
 /* ---------- the star: a live object while it rests ---------- */
 #ember {
   --near: 0;

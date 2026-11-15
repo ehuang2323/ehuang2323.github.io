@@ -1153,10 +1153,21 @@
   // ------------------------------------------------------------ the star
   // While resting, the star is a real element: it twinkles, wakes up as the
   // cursor comes near, follows the pointer when dragged, and stays wherever
-  // it's dropped. Drop it on the farmer and the scene takes over (ritual).
+  // it's dropped. The farmer dozes: click him first, then bring him the star
+  // while he's awake and the scene takes over (ritual).
   const ember = document.getElementById('ember');
-  const POS = 'star.pos';
+  const farmerHit = document.getElementById('farmer');
+  const POS = 'star.pos.v2';                       // v2: the default rest moved from the dock to under the moon
+  ls.del('star.pos');
   const S = () => window.Scene?.star;
+  const F = () => window.Scene?.farmer;
+
+  function placeFarmer() {
+    const r = F()?.rect();
+    if (!farmerHit || !r) return;
+    Object.assign(farmerHit.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+  }
+  farmerHit?.addEventListener('click', () => F()?.poke());
 
   function placeEmber() {
     const st = S();
@@ -1206,12 +1217,12 @@
     let moved = false, x = c.x, y = c.y;
     const move = (ev) => {
       if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 3) return;
-      if (!moved) { moved = true; st.grab(); ember.classList.add('held'); }
+      if (!moved) { moved = true; st.grab(); ember.classList.add('held'); F()?.stay(10); }
       x = clampN(ev.clientX - ox, 6, innerWidth - 6);
       y = clampN(ev.clientY - oy, 6, innerHeight - 6);
       ember.style.left = `${x}px`;
       ember.style.top = `${y}px`;
-      ember.classList.toggle('near', st.overFarmer(x, y));
+      ember.classList.toggle('near', st.overFarmer(x, y) && !!F()?.awake);
       trail(x, y);
     };
     const up = (ev) => {
@@ -1225,10 +1236,11 @@
         ember.classList.add('poke');
         return;
       }
-      if (ev.type === 'pointerup' && st.overFarmer(x, y)) {
+      if (ev.type === 'pointerup' && st.overFarmer(x, y) && F()?.awake) {
         ember.hidden = true;
         st.ritual(open);
       } else {                                       // it rests wherever it was let go
+        if (st.overFarmer(x, y)) F()?.snore();       // he's asleep: he doesn't notice
         st.place(x, y);
         ls.set(POS, st.frac);
         st.release();
@@ -1242,9 +1254,10 @@
 
   const savedPos = ls.get(POS);
   if (savedPos) S()?.setFrac(savedPos);
-  window.addEventListener('scene:layout', placeEmber);
+  window.addEventListener('scene:layout', () => { placeEmber(); placeFarmer(); });
   window.addEventListener('scene:star', placeEmber);
   placeEmber();
+  placeFarmer();
 
   window.Journal = { open, close, push };
 })();
