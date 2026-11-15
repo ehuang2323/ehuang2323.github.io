@@ -1,0 +1,26 @@
+{
+  "name": "Eddie Huang",
+  "tagline": "software engineer · ml systems · building things that measure themselves",
+  "email": "erh50@duke.edu",
+  "location": "Durham, NC",
+  "education": [
+    {
+      "school": "Duke University",
+      "degree": "B.S.",
+      "major": "Mathematics & Computer Science",
+      "minor": "Religious Studies",
+      "years": "2023 – 2027"
+    }
+  ],
+  "bio": [
+    "Hi! I'm a senior studying computer science. I like building systems end to end: training small models, writing the infrastructure that serves them, and measuring whether any of it actually works.",
+    "I love exploring new ideas and thinking deeply. Currently I'm thinking deeply about the apocalypse.",
+    "On the side I love reading, running and lifting."
+  ],
+  "interests": ["ml systems", "inference", "distributed systems", "mathematical modeling"],
+  "links": [
+    { "label": "github", "url": "https://github.com/ehuang2323" },
+    { "label": "linkedin", "url": "https://www.linkedin.com/in/edward-huang-1a1191231/" }
+  ],
+  "resume": "assets/resume.pdf"
+}

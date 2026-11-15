@@ -1,0 +1,8 @@
+[
+  {
+    "slug": "example-paper",
+    "title": "Title of Paper",
+    "pdf": "assets/papers/example-paper.pdf",
+    "abstract": "Optional: shown when someone runs `cat papers/example-paper`. Delete this field if you don't want it."
+  }
+]

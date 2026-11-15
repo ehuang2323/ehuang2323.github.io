@@ -1,0 +1,30 @@
+[
+  {
+    "slug": "mini-inference",
+    "title": "mini-inference: a small LLM serving engine",
+    "year": "2026",
+    "summary": "Paged KV cache + continuous batching in ~1.5k lines of Python, with speculative decoding as the one new idea.",
+    "tags": ["ml-infra", "python", "cuda"],
+    "details": [
+      "Placeholder: replace with real numbers, e.g. throughput and p95 latency vs. vLLM on a stated GPU and model.",
+      "Ablation table: each feature's contribution measured separately."
+    ],
+    "links": [
+      { "label": "code", "url": "https://github.com/yourname/mini-inference" },
+      { "label": "writeup", "url": "https://github.com/yourname/mini-inference#readme" }
+    ]
+  },
+  {
+    "slug": "raft-kv",
+    "title": "raft-kv: a verified key-value store",
+    "year": "2025",
+    "summary": "Raft-replicated KV store checked with Maelstrom/Jepsen and a seeded fault-injection simulator.",
+    "tags": ["distributed-systems", "go"],
+    "details": [
+      "Placeholder: passes linearizability checks under partitions; harness found N real bugs (write up the best one)."
+    ],
+    "links": [
+      { "label": "code", "url": "https://github.com/yourname/raft-kv" }
+    ]
+  }
+]

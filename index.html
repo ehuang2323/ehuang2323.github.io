@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>~ home</title>
+  <meta name="description" content="Personal site: about, projects, papers, resume.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="journal.css">
+</head>
+<body>
+  <!-- animated ASCII background: farmer by the lake, Poisson rain + comets -->
+  <pre id="scene" aria-hidden="true"></pre>
+  <!-- grab handle over the fallen star on the dock -->
+  <button type="button" id="ember" tabindex="-1" aria-hidden="true" hidden>*</button>
+
+  <main id="term" aria-label="Terminal">
+    <header class="titlebar">
+      <div class="dots">
+        <button type="button" class="dot red" data-win="min" aria-label="Minimize terminal"></button>
+        <button type="button" class="dot yellow" data-win="min" aria-label="Minimize terminal"></button>
+        <button type="button" class="dot green" data-win="max" aria-label="Maximize terminal"></button>
+      </div>
+      <nav class="nav" aria-label="Sections">
+        <button type="button" data-cmd="cd ~">~</button>
+        <button type="button" data-cmd="cd about">about</button>
+        <button type="button" data-cmd="cd projects">projects</button>
+        <button type="button" data-cmd="cd papers">papers</button>
+        <button type="button" data-cmd="cd resume">resume</button>
+        <button type="button" data-cmd="help">help</button>
+      </nav>
+    </header>
+
+    <div id="output" role="log" aria-live="polite"></div>
+
+    <form id="prompt" autocomplete="off">
+      <label for="cmd" class="ps1"><span id="ps1-user">guest@home</span>:<span id="cwd">~</span>$</label>
+      <input id="cmd" type="text" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go" aria-label="Command input">
+    </form>
+  </main>
+
+  <button type="button" id="hud" title="click for stats" data-cmd="stats"></button>
+
+  <noscript>
+    <div class="noscript">This site is a little terminal and needs JavaScript. Resume: <a href="assets/resume.pdf">assets/resume.pdf</a></div>
+  </noscript>
+
+  <script src="js/scene.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/journal.js"></script>
+</body>
+</html>
