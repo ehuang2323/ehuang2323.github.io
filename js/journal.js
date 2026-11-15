@@ -1,14 +1,20 @@
 /*
- * Private journal.
+ * Journal + blog.
  *
- * The window opens only after the fallen star on the dock is dragged into
- * the farmer's hands. Entries live in ONE json file inside a PRIVATE GitHub
- * repo. The page reads and writes it through the GitHub API with a
- * fine-grained token that is stored only in this browser. The repo name and
- * token never appear in this site's source, so the star is the hidden door
- * and the token is the lock.
+ * The window opens after the fallen star is dragged into the farmer's hands.
  *
- * File format (journal.json):
+ *  - Anyone who opens it can READ the blog: blog posts are published to a
+ *    public file in this site's repo (content/blog.json) and fetched like any
+ *    other content.
+ *  - Only the owner can WRITE. Writing goes through the GitHub API with a
+ *    fine-grained token. The token (and the private repo's name) is stored on
+ *    the owner's device encrypted with a passkey (PBKDF2 -> AES-GCM), so the
+ *    passkey is needed every session. Nothing secret is in this site's source.
+ *  - Everything (diary entries included) lives in journal.json in a PRIVATE
+ *    repo. On push, entries marked "blog" are also written to the public
+ *    file; diary entries never leave the private repo.
+ *
+ * journal.json:
  *   { version, tags: [{name, created}], tagsDeleted: {name: ts},
  *     entries: [{id, kind, title, date, tags, html, created, updated}],
  *     deleted: {id: ts} }
@@ -26,7 +32,7 @@
   const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
   // --------------------------------------------------------------- storage
-  const CFG = 'journal.cfg', DRAFT = 'journal.draft';
+  const VAULT = 'journal.vault', DRAFT = 'journal.draft';
   const ls = {
     get(k) {
       for (const s of [localStorage, sessionStorage]) {
@@ -40,14 +46,17 @@
     },
     del(k) { for (const s of [localStorage, sessionStorage]) { try { s.removeItem(k); } catch { /* ignore */ } } },
   };
+  // an earlier version kept the token in plain text: never leave that around
+  ls.del('journal.cfg');
+  if (ls.get(DRAFT) && !ls.get(DRAFT).ct) ls.del(DRAFT);
 
   // ---------------------------------------------------------------- github
   const API = 'https://api.github.com';
-  let cfg = null;      // { repo: 'owner/name', branch, path, token }
+  let cfg = null;      // { repo, branch, path, token, pub: {repo, branch, path} } (memory only, while unlocked)
   let sha = null;      // blob sha of journal.json as last seen on GitHub
 
-  function gh(path, opts = {}) {
-    return fetch(`${API}/repos/${cfg.repo}${path}`, {
+  function gh(path, opts = {}, repo = cfg.repo) {
+    return fetch(`${API}/repos/${repo}${path}`, {
       ...opts,
       cache: 'no-store',
       headers: {
@@ -66,19 +75,39 @@
     if (r.status === 404) return new Error(`${what}: not found. Check owner/repo and that the token can see it.`);
     return new Error(`${what}: HTTP ${r.status}${msg ? `: ${msg}` : ''}`);
   }
-  const filePath = () => cfg.path.split('/').map(encodeURIComponent).join('/');
+  const encPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+  const filePath = () => encPath(cfg.path);
 
-  function toB64(str) {
-    const bytes = new TextEncoder().encode(str);
+  function bytesToB64(bytes) {
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(bin);
   }
-  function fromB64(b64) {
+  function b64ToBytes(b64) {
     const bin = atob(b64.replace(/\s/g, ''));
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
+    return bytes;
+  }
+  const toB64 = (str) => bytesToB64(new TextEncoder().encode(str));
+  const fromB64 = (b64) => new TextDecoder().decode(b64ToBytes(b64));
+
+  // ---------------------------------------------------------------- passkey
+  // The passkey never leaves the browser and is never stored. It derives the
+  // AES key that seals the saved credentials (and the unpushed draft).
+  async function deriveKey(pass, salt) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function seal(key, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+    return { iv: bytesToB64(iv), ct: bytesToB64(new Uint8Array(ct)) };
+  }
+  async function unseal(key, box) {
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(box.iv) }, key, b64ToBytes(box.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
   }
 
   async function checkRepo() {
@@ -119,6 +148,53 @@
     }
     if (!r.ok) throw await ghError(r, 'push');
     return { sha: (await r.json()).content.sha };
+  }
+
+  // ------------------------------------------------------------ public blog
+  // where readers fetch posts from, and where pushes publish them (site.json "blog")
+  let pubCfg = { repo: '', branch: 'main', path: 'content/blog.json' };
+  let posts = [];                   // what readers see
+
+  async function loadSiteCfg() {
+    try {
+      const site = await fetch('content/site.json', { cache: 'no-cache' }).then((r) => r.json());
+      if (isObj(site.blog)) pubCfg = { ...pubCfg, ...site.blog };
+    } catch { /* keep defaults */ }
+  }
+  async function loadPosts() {
+    await loadSiteCfg();
+    try {
+      const r = await fetch(pubCfg.path, { cache: 'no-cache' });
+      const j = r.ok ? await r.json() : null;
+      posts = normalize({ entries: (j?.posts || []).map((p) => ({ ...p, kind: 'blog' })) }).entries;
+    } catch { posts = []; }
+  }
+
+  // only kind === 'blog' ever reaches the public file
+  function publicJson() {
+    const list = state.entries.filter((e) => e.kind === 'blog')
+      .map((e) => ({ id: e.id, title: e.title, date: e.date, tags: e.tags, html: clean(e.html), created: e.created }))
+      .sort((a, b) => (a.date === b.date ? b.created - a.created : a.date < b.date ? 1 : -1));
+    return `${JSON.stringify({ posts: list }, null, 1)}\n`;
+  }
+
+  // -> true if the public file changed
+  async function publish() {
+    const T = cfg.pub, json = publicJson();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await gh(`/contents/${encPath(T.path)}?ref=${encodeURIComponent(T.branch)}`, {}, T.repo);
+      let prev = null;
+      if (r.ok) {
+        const j = await r.json();
+        prev = j.sha;
+        if (j.content && fromB64(j.content) === json) return false;
+      } else if (r.status !== 404) throw await ghError(r, 'publish');
+      const body = { message: 'blog: update posts', content: toB64(json), branch: T.branch, ...(prev ? { sha: prev } : {}) };
+      const w = await gh(`/contents/${encPath(T.path)}`, { method: 'PUT', body: JSON.stringify(body) }, T.repo);
+      if (w.ok) return true;
+      if (w.status !== 409 && w.status !== 422) throw await ghError(w, 'publish');
+    }
+    throw new Error('publish: kept conflicting, try again');
   }
 
   // ------------------------------------------------------------------ data
@@ -227,12 +303,30 @@
   // ----------------------------------------------------------------- state
   let state = null;                 // the whole journal, in memory
   let dirty = false, rev = 0, busy = false, lastPushed = 0;
-  let view = 'lock', current = null;
+  let view = 'list', current = null;
+  let mode = 'read';                // 'read' (anyone) | 'write' (owner, unlocked with passkey)
+  let sessionKey = null;            // AES key from the passkey, memory only
   const fresh = new Set();          // entries created this session (empty ones get discarded)
   const filters = { q: '', kind: 'all', tags: new Set(), sort: 'desc' };
 
-  function saveDraft() { if (cfg && state) ls.set(DRAFT, { repo: cfg.repo, data: state }); }
-  function loadDraft() { const d = ls.get(DRAFT); return d && cfg && d.repo === cfg.repo ? normalize(d.data) : null; }
+  // unpushed work is kept on the device, sealed with the passkey
+  let draftTimer = 0;
+  function saveDraft() {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(async () => {
+      if (!cfg || !state || !sessionKey || !dirty) return;
+      try { ls.set(DRAFT, await seal(sessionKey, { repo: cfg.repo, data: state })); } catch { /* storage full */ }
+    }, 600);
+  }
+  async function loadDraft() {
+    const box = ls.get(DRAFT);
+    if (!box?.ct || !sessionKey) return null;
+    try {
+      const d = await unseal(sessionKey, box);
+      return d.repo === cfg.repo ? normalize(d.data) : null;
+    } catch { ls.del(DRAFT); return null; }   // sealed with an older passkey
+  }
+  function dropDraft() { clearTimeout(draftTimer); ls.del(DRAFT); }
 
   function markDirty() { rev++; dirty = true; saveDraft(); paint(); }
   function touch() { if (current) current.updated = Date.now(); markDirty(); }
@@ -250,8 +344,9 @@
         <button type="button" class="dot yellow" data-act="min" aria-label="Minimize journal" title="minimize"></button>
         <button type="button" class="dot green" data-act="max" aria-label="Maximize journal" title="maximize (or double-click the title bar)"></button>
       </div>
-      <span class="jr-name">journal</span>
+      <span class="jr-name">blog</span>
       <span class="jr-status" role="status"></span>
+      <button type="button" class="jr-btn jr-key" data-act="auth" title="write (needs the passkey)">✎ write</button>
       <button type="button" class="jr-btn jr-push" data-act="push" hidden title="commit to GitHub (⌘S)">push</button>
     </header>
     <div class="jr-body"></div>
@@ -264,11 +359,21 @@
   tab.setAttribute('aria-label', 'Restore journal');
   document.body.append(root, tab);
 
-  const body = $('.jr-body', root), statusEl = $('.jr-status', root), pushBtn = $('.jr-push', root);
+  const body = $('.jr-body', root), statusEl = $('.jr-status', root), pushBtn = $('.jr-push', root), keyBtn = $('.jr-key', root);
+
+  function setMode(m) {
+    mode = m;
+    $('.jr-name', root).textContent = m === 'write' ? 'journal' : 'blog';
+    tab.textContent = m === 'write' ? '* journal' : '* blog';
+    pushBtn.hidden = m !== 'write';
+    keyBtn.hidden = m === 'write';
+    paint();
+  }
 
   function paint(msg, cls = '') {
     statusEl.className = `jr-status ${cls}`;
-    statusEl.textContent = msg ?? (!state ? '' : dirty ? '● unpushed' : lastPushed ? `pushed ${hhmm(lastPushed)}` : 'in sync');
+    statusEl.textContent = msg ?? (mode !== 'write' || !state ? ''
+      : dirty ? '● unpushed' : lastPushed ? `pushed ${hhmm(lastPushed)}` : 'in sync');
     pushBtn.classList.toggle('hot', dirty);
   }
 
@@ -288,10 +393,14 @@
   function open() {
     if (root.classList.contains('open')) return;
     show();
-    if (state) return;
-    const saved = ls.get(CFG);
-    if (saved?.token) connect(saved);
-    else renderLock();
+    if (mode === 'write' && state) return;
+    openReader();
+  }
+  async function openReader() {
+    setMode('read');
+    body.innerHTML = '<div class="jr-empty">loading…</div>';
+    await loadPosts();
+    renderList();
   }
   function minimize() { flushEditor(); slideOut(); tab.hidden = false; }
   async function close() {
@@ -302,55 +411,134 @@
     window.Scene?.star.fall();
   }
 
-  // ------------------------------------------------------------ lock / sync
-  function renderLock(error = '', prefill = ls.get(CFG) || {}) {
-    view = 'lock';
-    pushBtn.hidden = true;
-    paint('locked');
+  // ------------------------------------------------------------ auth / sync
+  function renderAuth(error = '') {
+    leaveEntry();
+    view = 'auth';
+    const vault = ls.get(VAULT);
+    if (vault?.box) {
+      body.innerHTML = `
+        <form class="jr-lock" data-form="passkey">
+          <p class="jr-lead">Enter your passkey to write.</p>
+          <input type="text" name="username" value="journal" autocomplete="username" hidden>
+          <label>passkey<input name="pass" class="jr-input" type="password" required autocomplete="current-password"></label>
+          <button class="jr-btn jr-primary">unlock</button>
+          <p class="jr-err" role="alert">${esc(error)}</p>
+          <div class="jr-formfoot">
+            <button type="button" class="jr-link" data-act="reader">← back to reading</button>
+            <button type="button" class="jr-link jr-danger" data-act="forget">forget this device</button>
+          </div>
+        </form>`;
+      $('[name="pass"]', body).focus();
+      return;
+    }
     body.innerHTML = `
-      <form class="jr-lock">
-        <p class="jr-lead">This window reads and writes a <b>private</b> GitHub repo. The token stays in this browser.</p>
-        <label>repo<input name="repo" class="jr-input" placeholder="owner/private-repo" required autocomplete="off" spellcheck="false" value="${esc(prefill.repo || '')}"></label>
-        <div class="jr-row2">
-          <label>branch<input name="branch" class="jr-input" value="${esc(prefill.branch || 'main')}" spellcheck="false"></label>
-          <label>file<input name="path" class="jr-input" value="${esc(prefill.path || 'journal.json')}" spellcheck="false"></label>
-        </div>
+      <form class="jr-lock" data-form="setup">
+        <p class="jr-lead">Writing needs a GitHub token. It's saved on this device <b>encrypted with a passkey</b> you choose; after this, only the passkey is needed.</p>
+        <fieldset><legend>private journal (everything)</legend>
+          <label>repo<input name="repo" class="jr-input" placeholder="owner/private-repo" required autocomplete="off" spellcheck="false"></label>
+          <div class="jr-row2">
+            <label>branch<input name="branch" class="jr-input" value="main" spellcheck="false"></label>
+            <label>file<input name="path" class="jr-input" value="journal.json" spellcheck="false"></label>
+          </div>
+        </fieldset>
+        <fieldset><legend>public blog (this site's repo)</legend>
+          <label>repo<input name="pubrepo" class="jr-input" placeholder="owner/owner.github.io" required spellcheck="false" value="${esc(pubCfg.repo)}"></label>
+          <div class="jr-row2">
+            <label>branch<input name="pubbranch" class="jr-input" value="${esc(pubCfg.branch)}" spellcheck="false"></label>
+            <label>file<input name="pubpath" class="jr-input" value="${esc(pubCfg.path)}" spellcheck="false"></label>
+          </div>
+        </fieldset>
         <label>token<input name="token" class="jr-input" type="password" required placeholder="github_pat_…" autocomplete="off"></label>
-        <label class="jr-check"><input type="checkbox" name="remember" checked> remember on this device</label>
-        <button class="jr-btn jr-primary">unlock</button>
+        <input type="text" name="username" value="journal" autocomplete="username" hidden>
+        <div class="jr-row2">
+          <label>passkey<input name="pass" class="jr-input" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label>again<input name="pass2" class="jr-input" type="password" required minlength="8" autocomplete="new-password"></label>
+        </div>
+        <button class="jr-btn jr-primary">set up &amp; unlock</button>
         <p class="jr-err" role="alert">${esc(error)}</p>
         <details>
           <summary>first time?</summary>
           <ol>
             <li>Create a <b>private</b> repo on GitHub (e.g. <code>notes</code>), initialized with a README.</li>
-            <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: <i>only</i> that repo. Permissions: <b>Contents: Read and write</b>.</li>
-            <li>Paste it here. Nothing is written until you press push.</li>
+            <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: <i>only</i> the private repo <b>and</b> this site's repo. Permissions: <b>Contents: Read and write</b>.</li>
+            <li>Pick a passkey you'll remember (8+ characters). It can't be recovered; if you forget it, set up again with the token.</li>
           </ol>
         </details>
+        <div class="jr-formfoot"><button type="button" class="jr-link" data-act="reader">← back to reading</button></div>
       </form>`;
-    $('[name="token"]', body).focus();
+    $('[name="repo"]', body).focus();
   }
 
-  async function connect(c, remember) {
+  const repoName = (v) => String(v || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
+  const isRepo = (v) => /^[\w.-]+\/[\w.-]+$/.test(v);
+
+  async function submitAuth(form) {
+    const f = new FormData(form), err = $('.jr-err', form), btn = $('button.jr-primary', form);
+    const fail = (m) => { err.textContent = m; btn.disabled = false; };
+    if (!crypto?.subtle) return fail('this page needs https (or localhost) for encryption');
+    btn.disabled = true;
+    err.textContent = '';
+    const pass = String(f.get('pass'));
+    if (form.dataset.form === 'passkey') {
+      const vault = ls.get(VAULT);
+      let key, c;
+      try {
+        key = await deriveKey(pass, b64ToBytes(vault.salt));
+        c = await unseal(key, vault.box);
+      } catch { return fail('wrong passkey'); }
+      return connect(c, key);
+    }
+    const c = {
+      repo: repoName(f.get('repo')),
+      branch: String(f.get('branch')).trim() || 'main',
+      path: String(f.get('path')).trim().replace(/^\/+/, '') || 'journal.json',
+      token: String(f.get('token')).trim(),
+      pub: {
+        repo: repoName(f.get('pubrepo')),
+        branch: String(f.get('pubbranch')).trim() || 'main',
+        path: String(f.get('pubpath')).trim().replace(/^\/+/, '') || 'content/blog.json',
+      },
+    };
+    if (!isRepo(c.repo) || !isRepo(c.pub.repo)) return fail('repos should look like owner/name');
+    if (c.repo.toLowerCase() === c.pub.repo.toLowerCase()) return fail('the journal must live in a different (private) repo than the site');
+    if (pass.length < 8) return fail('passkey needs 8+ characters');
+    if (pass !== String(f.get('pass2'))) return fail("passkeys don't match");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveKey(pass, salt);
+    connect(c, key, salt);
+  }
+
+  // salt is passed only on first setup, which also saves the sealed credentials
+  async function connect(c, key, salt) {
     cfg = c;
-    body.innerHTML = '<div class="jr-empty">opening…</div>';
+    sessionKey = key;
     paint('connecting…');
     try {
       await checkRepo();
+      const pubRepo = await gh('', {}, c.pub.repo);
+      if (!pubRepo.ok) throw await ghError(pubRepo, 'site repo');
       const remote = await pull();
       sha = remote.sha;
-      const draft = loadDraft();
+      const draft = await loadDraft();
       state = draft ? merge(draft, remote.data) : remote.data;
       dirty = !!draft && JSON.stringify(state) !== JSON.stringify(remote.data);
-      if (!dirty) ls.del(DRAFT);
-      if (remember !== undefined) ls.set(CFG, c, remember);
-      pushBtn.hidden = false;
-      paint();
+      if (!dirty) dropDraft();
+      if (salt) {
+        dropDraft();
+        ls.set(VAULT, { v: 1, salt: bytesToB64(salt), box: await seal(key, c) });
+      }
+      setMode('write');
       renderList();
     } catch (e) {
-      const prefill = { ...c, token: '' };
       cfg = null;
-      renderLock(e.message, prefill);
+      sessionKey = null;
+      if (view !== 'auth') renderAuth();
+      const err = $('.jr-err', body);
+      if (err) err.textContent = e.message;
+      const btn = $('button.jr-primary', body);
+      if (btn) btn.disabled = false;
+      paint();
     }
   }
 
@@ -367,9 +555,15 @@
           sha = res.sha;
           lastPushed = Date.now();
           dirty = rev !== startRev;                // typed while pushing? still dirty
-          if (!dirty) ls.del(DRAFT);
+          if (!dirty) dropDraft();
           fresh.clear();
-          paint();
+          paint('publishing…');
+          let published;
+          try { published = await publish(); } catch (e) {
+            paint(`saved privately, but the blog didn't publish: ${e.message}`, 'err');
+            return false;
+          }
+          paint(published ? `pushed ${hhmm(lastPushed)} · blog published` : undefined);
           return true;
         }
         // another device pushed first: fold its changes in and retry
@@ -388,40 +582,61 @@
     }
   }
 
+  // back to read-only; the sealed credentials and draft stay on the device
   function lock() {
-    if (dirty && !confirm('You have unpushed changes. Lock anyway and lose them?')) return;
-    ls.del(CFG); ls.del(DRAFT);
-    cfg = null; state = null; sha = null; dirty = false; current = null;
-    renderLock();
+    leaveEntry();
+    flushEditor();
+    if (dirty && sessionKey && cfg && state) {      // seal the draft right now before dropping the key
+      clearTimeout(draftTimer);
+      seal(sessionKey, { repo: cfg.repo, data: state }).then((box) => ls.set(DRAFT, box));
+    }
+    cfg = null; state = null; sha = null; sessionKey = null; dirty = false; current = null;
+    openReader();
+  }
+  // wipe everything this device knows
+  function forget() {
+    if (!confirm('Forget the saved token and any unpushed draft on this device?')) return;
+    ls.del(VAULT);
+    dropDraft();
+    cfg = null; state = null; sha = null; sessionKey = null; dirty = false; current = null;
+    setMode('read');
+    renderAuth();
   }
 
   // ------------------------------------------------------------------ list
+  const src = () => (mode === 'write' ? state.entries : posts);
+  const tagNames = () => (mode === 'write' ? state.tags.map((t) => t.name) : [...new Set(posts.flatMap((p) => p.tags))].sort());
+
   function renderList() {
     leaveEntry();
     view = 'list';
+    for (const t of filters.tags) if (!tagNames().includes(t)) filters.tags.delete(t);
+    const w = mode === 'write';
     body.innerHTML = `
       <div class="jr-tools">
-        <button type="button" class="jr-btn jr-primary" data-act="new" data-kind="diary">+ diary</button>
-        <button type="button" class="jr-btn" data-act="new" data-kind="blog">+ blog</button>
-        <input type="search" class="jr-input jr-search" placeholder="search" value="${esc(filters.q)}" aria-label="Search entries">
+        ${w ? `<button type="button" class="jr-btn jr-primary" data-act="new" data-kind="diary">+ diary</button>
+        <button type="button" class="jr-btn" data-act="new" data-kind="blog">+ blog</button>` : ''}
+        <input type="search" class="jr-input jr-search" placeholder="search${w ? '' : ' posts'}" value="${esc(filters.q)}" aria-label="Search">
         <button type="button" class="jr-btn" data-act="sort" title="sort by date">${filters.sort === 'desc' ? 'newest ↓' : 'oldest ↑'}</button>
       </div>
       <div class="jr-filters">
-        <div class="jr-seg" role="group" aria-label="Kind">${['all', 'diary', 'blog'].map((k) =>
-          `<button type="button" class="${filters.kind === k ? 'on' : ''}" data-act="kind" data-kind="${k}">${k}</button>`).join('')}</div>
-        ${state.tags.map((t) => `<button type="button" class="jr-chip ${filters.tags.has(t.name) ? 'on' : ''}" data-act="ftag" data-tag="${esc(t.name)}">#${esc(t.name)}</button>`).join('')}
-        <button type="button" class="jr-link" data-act="tags">manage tags</button>
+        ${w ? `<div class="jr-seg" role="group" aria-label="Kind">${['all', 'diary', 'blog'].map((k) =>
+          `<button type="button" class="${filters.kind === k ? 'on' : ''}" data-act="kind" data-kind="${k}">${k}</button>`).join('')}</div>` : ''}
+        ${tagNames().map((t) => `<button type="button" class="jr-chip ${filters.tags.has(t) ? 'on' : ''}" data-act="ftag" data-tag="${esc(t)}">#${esc(t)}</button>`).join('')}
+        ${w ? '<button type="button" class="jr-link" data-act="tags">manage tags</button>' : ''}
       </div>
       <ol class="jr-rows"></ol>
-      <div class="jr-foot"><button type="button" class="jr-link" data-act="lock">lock &amp; forget token</button></div>`;
+      ${w ? `<div class="jr-foot">
+        <button type="button" class="jr-link" data-act="lock">lock</button>
+        <button type="button" class="jr-link jr-danger" data-act="forget">forget this device</button></div>` : ''}`;
     renderRows();
   }
 
   function visible() {
     const q = filters.q.trim().toLowerCase();
     const dir = filters.sort === 'desc' ? -1 : 1;
-    return state.entries
-      .filter((e) => filters.kind === 'all' || e.kind === filters.kind)
+    return src()
+      .filter((e) => mode !== 'write' || filters.kind === 'all' || e.kind === filters.kind)
       .filter((e) => [...filters.tags].every((t) => e.tags.includes(t)))
       .filter((e) => !q || `${e.title} ${textOf(e)} ${e.tags.join(' ')}`.toLowerCase().includes(q))
       .sort((a, b) => dir * (a.date === b.date ? a.created - b.created : a.date < b.date ? -1 : 1));
@@ -432,7 +647,8 @@
     if (!ol) return;
     const list = visible();
     if (!list.length) {
-      ol.innerHTML = `<li class="jr-empty">${state.entries.length ? 'nothing matches.' : 'nothing yet. Start with <b>+ diary</b>.'}</li>`;
+      ol.innerHTML = `<li class="jr-empty">${src().length ? 'nothing matches.'
+        : mode === 'write' ? 'nothing yet. Start with <b>+ diary</b>.' : 'no posts yet.'}</li>`;
       return;
     }
     let month = '';
@@ -444,7 +660,7 @@
       return `${head}<li><button type="button" class="jr-entry" data-act="open" data-id="${esc(e.id)}">
         <span class="jr-day"><b>${d.getDate()}</b>${esc(d.toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase())}</span>
         <span class="jr-main">
-          <span class="jr-t">${esc(e.title || 'untitled')}${e.kind === 'blog' ? ' <span class="jr-kind">blog</span>' : ''}</span>
+          <span class="jr-t">${esc(e.title || 'untitled')}${mode === 'write' && e.kind === 'blog' ? ' <span class="jr-kind" title="published on push">public</span>' : ''}</span>
           ${snip ? `<span class="jr-snip">${esc(snip)}</span>` : ''}
           ${e.tags.length ? `<span class="jr-tagline">${e.tags.map((t) => `#${esc(t)}`).join(' ')}</span>` : ''}
         </span></button></li>`;
@@ -470,6 +686,21 @@
     $('.jr-title', root).focus();
   }
 
+  function renderPost(p) {
+    view = 'post';
+    const d = parseDate(p.date);
+    body.innerHTML = `
+      <div class="jr-entrybar"><button type="button" class="jr-link" data-act="back">← posts</button></div>
+      <article class="jr-doc">
+        <div class="jr-meta"><time datetime="${esc(p.date)}">${esc(d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))}</time></div>
+        <h1 class="jr-rtitle">${esc(p.title || 'untitled')}</h1>
+        ${p.tags.length ? `<div class="jr-etags">${p.tags.map((t) => `<span class="jr-chip">#${esc(t)}</span>`).join('')}</div>` : ''}
+        <div class="jr-ed jr-ro">${clean(p.html)}</div>
+      </article>`;
+    for (const a of body.querySelectorAll('.jr-ro a')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    body.scrollTop = 0;
+  }
+
   function renderEntry(e) {
     leaveEntry();
     view = 'entry';
@@ -488,8 +719,8 @@
       <article class="jr-doc">
         <div class="jr-meta">
           <input type="date" class="jr-input jr-date" value="${esc(e.date)}" aria-label="Date">
-          <div class="jr-seg" role="group" aria-label="Kind">${['diary', 'blog'].map((k) =>
-            `<button type="button" class="${e.kind === k ? 'on' : ''}" data-act="ekind" data-kind="${k}">${k}</button>`).join('')}</div>
+          <div class="jr-seg" role="group" aria-label="Kind">${[['diary', 'diary · private'], ['blog', 'blog · public']].map(([k, label]) =>
+            `<button type="button" class="${e.kind === k ? 'on' : ''}" data-act="ekind" data-kind="${k}">${label}</button>`).join('')}</div>
         </div>
         <input class="jr-title" placeholder="untitled" value="${esc(e.title)}" aria-label="Title">
         <div class="jr-etags"></div>
@@ -704,9 +935,14 @@
   const ACT = {
     close, min: minimize, push,
     max: () => toggleMax(),
-    lock,
+    lock, forget,
+    auth: () => renderAuth(),
+    reader: () => openReader(),
     new: (b) => newEntry(b.dataset.kind),
-    open: (b) => { const e = state.entries.find((x) => x.id === b.dataset.id); if (e) renderEntry(e); },
+    open: (b) => {
+      const e = src().find((x) => x.id === b.dataset.id);
+      if (e) (mode === 'write' ? renderEntry : renderPost)(e);
+    },
     back: () => renderList(),
     tags: () => renderTags(),
     sort: () => { filters.sort = filters.sort === 'desc' ? 'asc' : 'desc'; renderList(); },
@@ -753,15 +989,7 @@
   root.addEventListener('submit', (e) => {
     if (!e.target.matches('.jr-lock')) return;
     e.preventDefault();
-    const f = new FormData(e.target);
-    const repo = String(f.get('repo')).trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$|\/$/g, '');
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { $('.jr-err', root).textContent = 'repo should look like owner/name'; return; }
-    connect({
-      repo,
-      branch: String(f.get('branch')).trim() || 'main',
-      path: String(f.get('path')).trim().replace(/^\/+/, '') || 'journal.json',
-      token: String(f.get('token')).trim(),
-    }, !!f.get('remember'));
+    submitAuth(e.target);
   });
 
   root.addEventListener('input', (e) => {
@@ -772,9 +1000,16 @@
     else if (t.matches('.jr-ed')) scheduleFlush();
   });
 
+  // ⌘S / ctrl-S pushes whenever the journal is open for writing, wherever focus is
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && mode === 'write' && root.classList.contains('open')) {
+      e.preventDefault();
+      push();
+    }
+  });
   root.addEventListener('keydown', (e) => {
     const t = e.target, mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
-    if (mod && k === 's') { e.preventDefault(); push(); return; }
+    if (mod && k === 's') return;                       // handled on document below
     if (t.matches('.jr-ed')) {
       if (e.key === 'Tab') { e.preventDefault(); fmt(e.shiftKey ? 'outdent' : 'indent'); }
       else if (mod && k === 'k') { e.preventDefault(); fmt('link'); }

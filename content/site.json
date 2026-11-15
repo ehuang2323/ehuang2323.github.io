@@ -17,10 +17,31 @@
     "I love exploring new ideas and thinking deeply. Currently I'm thinking deeply about the apocalypse.",
     "On the side I love reading, running and lifting."
   ],
-  "interests": ["ml systems", "inference", "distributed systems", "mathematical modeling"],
-  "links": [
-    { "label": "github", "url": "https://github.com/ehuang2323" },
-    { "label": "linkedin", "url": "https://www.linkedin.com/in/edward-huang-1a1191231/" }
+  "interests": [
+    "ml systems",
+    "inference",
+    "distributed systems",
+    "mathematical modeling"
   ],
-  "resume": "assets/resume.pdf"
+  "links": [
+    {
+      "label": "github",
+      "url": "https://github.com/ehuang2323"
+    },
+    {
+      "label": "linkedin",
+      "url": "https://www.linkedin.com/in/edward-huang-1a1191231/"
+    }
+  ],
+  "resume": "assets/resume.pdf",
+  "under_construction": [
+    "projects",
+    "papers",
+    "resume"
+  ],
+  "blog": {
+    "repo": "ehuang2323/ehuang2323.github.io",
+    "branch": "main",
+    "path": "content/blog.json"
+  }
 }

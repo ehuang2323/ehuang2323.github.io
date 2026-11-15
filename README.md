@@ -65,18 +65,30 @@ content/*.json    your content
 assets/resume.pdf your resume
 ```
 
-## Private journal
+## Under construction
 
-A star lies glowing on the dock to the right of the farmer. It brightens as your cursor nears; drag it anywhere and it stays there (remembered across visits). Drop it into the farmer's hands: it climbs the rod and blooms, and a journal window slides in on the right. Close it (red dot) and the star arcs back to wherever it was resting. The window can be dragged by its title bar, resized from any edge or corner, maximized with green or a title-bar double-click, and minimized to a tab with yellow. Drag it against the right screen edge to dock it again.
+Sections listed in `content/site.json` under `"under_construction"` (now `projects`, `papers`, `resume`) show a construction sign instead of their files. The resume sign also shows the email address. Remove a name from the list to bring that section back; its JSON content is untouched.
 
-**Where entries live:** one file (`journal.json`) in a separate **private** GitHub repo, *not* in this site's repo. The page talks to the GitHub API with a fine-grained token kept only in your browser. Neither the repo name nor the token appears in this site's source, so the star is only a hidden door and the token is the actual lock.
+## Blog + private journal
+
+A star lies glowing on the dock to the right of the farmer. It brightens as your cursor nears; drag it anywhere and it stays there (remembered across visits). Drop it into the farmer's hands: it climbs the rod and blooms, and a window slides in on the right. Close it (red dot) and the star arcs back to wherever it was resting. The window can be dragged by its title bar, resized from any edge or corner, maximized with green or a title-bar double-click, and minimized to a tab with yellow. Drag it against the right screen edge to dock it again.
+
+**Visitors** get the *blog*: they can read, search, sort and filter posts by tag, but can't write. Posts come from `content/blog.json` in this repo.
+
+**You** press *✎ write* and enter your passkey to get the full *journal*:
+
+- Every entry (diary and blog) lives in `journal.json` in a separate **private** repo.
+- When you push, entries marked **blog · public** are also written to `content/blog.json` in this site's repo, so readers see them about a minute later, once Pages redeploys. **diary · private** entries never leave the private repo.
+- The GitHub token is stored on your device **encrypted with your passkey** (PBKDF2 + AES-GCM, via the browser's Web Crypto), as is any unpushed draft. The passkey itself is never stored. Nothing secret is in this site's source.
 
 Setup, once per device:
 
 1. Create a private repo (e.g. `notes`) with a README.
-2. GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only that repo. Permissions: **Contents: Read and write**. Pick an expiry you're fine renewing.
-3. Open the journal, enter `owner/notes` and the token, then unlock. It refuses to run against a public repo.
+2. GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: **only** the private repo **and** this site's repo. Permissions: **Contents: Read and write**.
+3. Drag the star to the farmer, press *✎ write*, fill in both repos, paste the token, and choose a passkey (8+ characters). From then on that device only asks for the passkey.
 
-Writing: `+ diary` / `+ blog`, date picker, tags (type and press enter; manage/rename/delete under *manage tags*), bold ⌘B, italic ⌘I, underline ⌘U, highlight ⌘⇧H, link ⌘K (⌘-click opens a link), bullets, numbered lists, indent Tab / outdent ⇧Tab. **push** (⌘S) commits to the private repo. Until you push, edits are kept as a local draft in this browser, and a draft left on a device merges in the next time you unlock there. If two devices push, entries merge by last edit. *lock & forget token* wipes the token and draft from the device.
+*lock* returns to read-only and keeps the saved credentials. *forget this device* wipes them. A forgotten passkey can't be recovered: choose *forget this device*, then set up again with the token.
 
-All entry HTML goes through an allowlist sanitizer on load and on paste.
+**Because the site publishes posts by committing to this repo, run `git pull` before pushing your own changes to the site.**
+
+Editing: bold ⌘B, italic ⌘I, underline ⌘U, highlight ⌘⇧H, link ⌘K (⌘-click opens a link), bullets, numbered lists, indent Tab / outdent ⇧Tab, tags (type and press enter; *manage tags* renames or deletes them). **push** or ⌘S commits. If two devices push, entries merge by last edit. All entry HTML goes through an allowlist sanitizer on load, paste and publish.

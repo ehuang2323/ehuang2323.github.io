@@ -176,6 +176,11 @@ a:hover { background: var(--accent); color: var(--bg); }
 .tags { color: var(--muted); font-size: 0.9em; }
 .links a, .links .cmdlink { margin-right: 12px; }
 .help { display: grid; grid-template-columns: max-content 1fr; gap: 0 18px; }
+.uc { margin: 10px 0; color: var(--accent-2); font: inherit; line-height: 1.25; white-space: pre; overflow-x: auto; }
+.sign {
+  display: inline-block; margin: 4px 0 6px; padding: 8px 14px;
+  border: 1px dashed var(--accent-2); border-radius: 4px; line-height: 1.7;
+}
 .rule { color: var(--dim); overflow: hidden; white-space: nowrap; }
 
 /* ---------- HUD ---------- */

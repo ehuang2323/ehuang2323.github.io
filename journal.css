@@ -280,3 +280,17 @@
 .jr-rz-se { bottom: -4px; right: -4px; cursor: nwse-resize; }
 .jr.max .jr-rz { display: none; }
 @media (max-width: 640px) { .jr-rz { display: none; } .jr-bar { cursor: default; } }
+
+/* ---------- read mode + passkey forms ---------- */
+.jr-key { color: var(--muted); border-color: var(--jr-line); padding: 2px 8px; font-size: 12px; }
+.jr-key[hidden], .jr-push[hidden] { display: none; }
+.jr-lock fieldset { display: grid; gap: 10px; margin: 0; padding: 10px 12px 12px; border: 1px solid var(--jr-line); border-radius: 8px; }
+.jr-lock legend { padding: 0 6px; color: var(--accent-2); font-size: 12px; }
+.jr-formfoot { display: flex; justify-content: space-between; gap: 10px; }
+.jr-primary:disabled { opacity: 0.6; cursor: progress; }
+.jr-foot { display: flex; justify-content: center; gap: 18px; }
+.jr-rtitle { margin: 4px 0 10px; font: 600 28px/1.25 "IBM Plex Serif", Georgia, serif; color: var(--fg); }
+.jr-meta time { color: var(--muted); font-size: 12px; }
+.jr-ro { min-height: 0; }
+.jr-ro a { cursor: pointer; }
+.jr-ro a:hover { color: var(--bg); background: var(--accent); }

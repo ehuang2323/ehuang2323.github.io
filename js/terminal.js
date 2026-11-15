@@ -32,12 +32,15 @@
   const fmt = (x, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : '—');
 
   // ------------------------------------------------------------ filesystem
+  // sections listed in site.json "under_construction" show a sign instead of their files
+  const building = (d) => (site.under_construction || []).includes(d);
+
   function tree() {
     return {
       about: { 'readme.txt': { kind: 'about' }, 'contact.txt': { kind: 'contact' } },
-      projects: Object.fromEntries(projects.map((p) => [`${p.slug}.md`, { kind: 'project', item: p }])),
-      papers: Object.fromEntries(papers.map((p) => [`${p.slug}.txt`, { kind: 'paper', item: p }])),
-      resume: { 'resume.pdf': { kind: 'resume' } },
+      projects: building('projects') ? {} : Object.fromEntries(projects.map((p) => [`${p.slug}.md`, { kind: 'project', item: p }])),
+      papers: building('papers') ? {} : Object.fromEntries(papers.map((p) => [`${p.slug}.txt`, { kind: 'paper', item: p }])),
+      resume: building('resume') ? {} : { 'resume.pdf': { kind: 'resume' } },
     };
   }
 
@@ -137,7 +140,28 @@
       <div class="dim" style="margin-top:6px">or type <span class="acc">open resume.pdf</span></div>`;
   }
 
+  const BARRIER = String.raw`
+ _____________________________________
+|/////////////////////////////////////|
+|                                     |
+|         UNDER  CONSTRUCTION         |
+|                                     |
+|/////////////////////////////////////|
+'-------------------------------------'
+    ||          /\               ||
+    ||         /!!\              ||
+  __||__      /____\           __||__`.slice(1);
+
+  function renderConstruction(name) {
+    const sign = name === 'resume' && site.email
+      ? `<div class="sign">resume available on request<br>inquiries: ${link('mailto:' + site.email, site.email)}</div>` : '';
+    return `<div class="h2"># ${esc(name)}</div>
+      <pre class="uc" aria-label="Under construction">${esc(BARRIER)}</pre>
+      ${sign || '<div class="muted">pardon the dust. check back soon.</div>'}`;
+  }
+
   function renderDir(name) {
+    if (building(name)) return renderConstruction(name);
     switch (name) {
       case '~': return renderHome();
       case 'about': return renderAbout();
@@ -177,6 +201,7 @@
       const r = resolve(target);
       if (!r) return err(`ls: ${target}: No such file or directory`);
       if (r.type === 'file') return esc(r.name);
+      if (building(r.name)) return '<span class="muted">(under construction)</span>';
       const T = tree();
       const entries = r.name === '~'
         ? DIRS.map((d) => ({ name: d + '/', c: `cd ${d}`, dir: true }))
