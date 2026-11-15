@@ -81,8 +81,9 @@
   // ------------------------------------------------------------- renderers
   function aboutTable() {
     const edu = (site.education || []).map((e) =>
-      `${esc(e.degree)} ${esc(e.major)}, ${esc(e.school)} <span class="muted">(${esc(e.years)})</span>`).join('<br>');
-    const major = (site.education || []).map((e) => esc(e.major) + (e.minor ? ` <span class="muted">· minor ${esc(e.minor)}</span>` : '')).join('<br>');
+      esc(e.school) + (e.program ? `, ${esc(e.program)}` : '') + ` <span class="muted">(${esc(e.years)})</span>`).join('<br>');
+    const major = (site.education || []).filter((e) => e.major).map((e) =>
+      (e.degree ? esc(e.degree) + ' ' : '') + esc(e.major) + (e.minor ? ` <span class="muted">· minor ${esc(e.minor)}</span>` : '')).join('<br>');
     return `<dl class="kv">
       <dt>name</dt><dd class="acc2">${esc(site.name)}</dd>
       <dt>education</dt><dd>${edu || '—'}</dd>
@@ -157,7 +158,7 @@
       ? `<div class="sign">resume available on request<br>inquiries: ${link('mailto:' + site.email, site.email)}</div>` : '';
     return `<div class="h2"># ${esc(name)}</div>
       <pre class="uc" aria-label="Under construction">${esc(BARRIER)}</pre>
-      ${sign || '<div class="muted">pardon the dust. check back soon.</div>'}`;
+      ${sign || `<div class="muted">${name === 'papers' ? 'pardon the dust, curating my favorite thought projects.' : 'pardon the dust. check back soon.'}</div>`}`;
   }
 
   function renderDir(name) {
